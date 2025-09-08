@@ -1,16 +1,15 @@
 <!-- =============================
-Part 1 / 3  ——  HTML + CSS（ここから貼り付け開始）
-結合方法：Part1 の末尾に続けて Part2、続けて Part3 をそのまま下に貼り、
-合計1ファイルの .html として保存してください。
+Part 1 / 3 —— HTML + CSS（ここから貼付）
+結合方法：Part1 の直後に Part2、さらに Part3 を連続して貼り、1つの .html で保存。
 ============================= -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>3D オセロ（6×6×6）</title>
+  <title>3D オセロ（6×6×6 CPU対応）</title>
   <style>
-    :root { --bg:#0f1220; --panel:#1b2140; --accent:#8ec5ff; --text:#e8ecf3; }
+    :root { --bg:#6e7f91; --panel:#1b2140; --accent:#8ec5ff; --text:#e8ecf3; }
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; }
     body { display: grid; grid-template-columns: 320px 1fr; grid-template-rows: 100%; background: var(--bg); color: var(--text); font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; }
@@ -34,18 +33,14 @@ Part 1 / 3  ——  HTML + CSS（ここから貼り付け開始）
     #winnerCard h2 { margin: 0 0 8px; font-size: 20px; }
     #winnerCard p { margin: 0 0 14px; opacity: .9; }
     .small { font-size: 12px; opacity: .85; }
-    @media (max-width: 960px) {
-      body { grid-template-columns: 1fr; grid-template-rows: 220px 1fr; }
-      #sidebar { grid-row: 1; border-right: none; border-bottom: 1px solid rgba(255,255,255,.08); }
-      #canvasWrap { grid-row: 2; min-height: 55vh; }
-    }
+    @media (max-width: 960px) { body { grid-template-columns: 1fr; grid-template-rows: 220px 1fr; } #sidebar { grid-row: 1; border-right: none; border-bottom: 1px solid rgba(255,255,255,.08); } #canvasWrap { grid-row: 2; min-height: 55vh; } }
   </style>
 </head>
 <body>
   <aside id="sidebar">
     <div>
-      <h1>3D オセロ（6×6×6）</h1>
-      <div class="sub">黒が先手。相手石を挟んだ方向に石を置いて反転させます。両者とも置けなくなる or 盤が埋まったら多い方の勝ち。高さ層スライダーで層を操作します。</div>
+      <h1>3D オセロ（6×6×6 CPU対応）</h1>
+      <div class="sub">黒が先手。相手石を挟んだ方向に石を置いて反転。双方置けなくなる or 盤が埋まったら多い方の勝ち。層スライダーでY層を操作します。</div>
     </div>
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:8px">
@@ -60,25 +55,27 @@ Part 1 / 3  ——  HTML + CSS（ここから貼り付け開始）
       <div class="row" style="gap:8px;margin-top:8px">
         <label class="small"><input id="sliceOnly" type="checkbox" checked /> この層だけ操作</label>
       </div>
+      <div class="row" style="gap:8px;margin-top:8px">
+        <label for="mode" style="min-width:6em">モード</label>
+        <select id="mode" style="flex:1">
+          <option value="human" selected>対人（交互に打つ）</option>
+          <option value="cpu">CPU対戦（白=CPU）</option>
+        </select>
+      </div>
       <div class="small" style="margin-top:10px">黒: <span id="countBlack">0</span> / 白: <span id="countWhite">0</span></div>
     </div>
-
     <div id="winnerOverlay">
       <div id="winnerCard">
         <h2 id="winnerTitle">勝敗</h2>
         <p id="winnerMsg"></p>
-        <div class="row">
-          <button id="againBtn" class="primary">もう一度</button>
-        </div>
+        <div class="row"><button id="againBtn" class="primary">もう一度</button></div>
       </div>
     </div>
   </aside>
 
-  <main id="canvasWrap">
-    <canvas id="three"></canvas>
-  </main>
+  <main id="canvasWrap"><canvas id="three"></canvas></main>
 
-  <!-- Three.js import map（OrbitControls が `import "three"` を使うため必要） -->
+  <!-- Three.js import map -->
   <script type="importmap">
     {
       "imports": {
@@ -87,245 +84,334 @@ Part 1 / 3  ——  HTML + CSS（ここから貼り付け開始）
       }
     }
   </script>
-  <!-- =============================
-Part 2 / 3  ——  JavaScript 前半（Three.js 初期化〜石置き/反転ロジック）
-============================= -->
-  <script type="module">
-    import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+<!-- ================= JavaScript Part2 (reset/CPU fix) ================= -->
+<script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-    // ====== 基本パラメータ ======
-    const SIZE = 6;            // 6x6x6
-    const SPACING = 1.2;       // マス間隔
-    const CELL = 0.9;          // マス立方体の一辺
-    const STONE_R = 0.43;      // 石の半径
+  const G = {};
+  window.Game3DOthello = G;
 
-    // DOM 取得
-    const canvas = document.getElementById('three');
-    const turnText = document.getElementById('turnText');
-    const turnDot = document.getElementById('turnDot');
-    const resetBtn = document.getElementById('resetBtn');
-    const layerSlider = document.getElementById('layerY');
-    const layerVal = document.getElementById('layerVal');
-    const sliceOnly = document.getElementById('sliceOnly');
-    const winnerOverlay = document.getElementById('winnerOverlay');
-    const winnerTitle = document.getElementById('winnerTitle');
-    const winnerMsg = document.getElementById('winnerMsg');
-    const againBtn = document.getElementById('againBtn');
-    const countBlackEl = document.getElementById('countBlack');
-    const countWhiteEl = document.getElementById('countWhite');
+  // DOM
+  const canvas = document.getElementById('three');
+  const turnText = document.getElementById('turnText');
+  const turnDot = document.getElementById('turnDot');
+  const resetBtn = document.getElementById('resetBtn');
+  const layerSlider = document.getElementById('layerY');
+  const layerVal = document.getElementById('layerVal');
+  const sliceOnly = document.getElementById('sliceOnly');
+  const winnerOverlay = document.getElementById('winnerOverlay');
+  const winnerTitle = document.getElementById('winnerTitle');
+  const winnerMsg = document.getElementById('winnerMsg');
+  const againBtn = document.getElementById('againBtn');
+  const countBlackEl = document.getElementById('countBlack');
+  const countWhiteEl = document.getElementById('countWhite');
+  const modeSel = document.getElementById('mode');
 
-    // ====== Three.js 基盤 ======
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0f1220);
+  // 基本
+  const SIZE = 6, SPACING = 1.2, CELL = 0.9, STONE_R = 0.43;
+  const PLAYER = { EMPTY:0, BLACK:1, WHITE:2 };
 
-    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
-    camera.position.set(9, 10, 13);
+  // Three.js
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x6e7f91);
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.minDistance = 8;
-    controls.maxDistance = 30;
-    controls.target.set(0, 0, 0);
+  const camera = new THREE.PerspectiveCamera(60,1,0.1,120);
+  camera.position.set(9,10,13);
 
-    function resize() {
-      const rect = canvas.parentElement.getBoundingClientRect();
-      const w = Math.max(1, Math.floor(rect.width));
-      const h = Math.max(1, Math.floor(rect.height));
-      renderer.setSize(w, h, false);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true; controls.dampingFactor = 0.05;
+  controls.minDistance = 8; controls.maxDistance = 40;
+  controls.target.set(0,0,0);
+  controls.enableZoom = false; // Shift+ホイールのみズーム
+
+  function resize(){
+    const r = canvas.parentElement.getBoundingClientRect();
+    renderer.setSize(r.width, r.height, false);
+    camera.aspect = r.width/r.height;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize); resize();
+
+  scene.add(new THREE.AmbientLight(0xffffff,0.7));
+  const dir = new THREE.DirectionalLight(0xffffff,0.85); dir.position.set(8,10,8); scene.add(dir);
+
+  const OFFSET = ((SIZE-1)*SPACING)/2;
+  const frameGeo = new THREE.BoxGeometry(SIZE*SPACING+0.8,SIZE*SPACING+0.8,SIZE*SPACING+0.8);
+  scene.add(new THREE.LineSegments(new THREE.WireframeGeometry(frameGeo), new THREE.LineBasicMaterial({color:0x6b7ab0})));
+
+  // 盤・セル
+  const board = Array.from({length:SIZE},()=>Array.from({length:SIZE},()=>Array(SIZE).fill(0)));
+  const cells=[]; const cellGroup=new THREE.Group(); scene.add(cellGroup);
+  const cellGeo = new THREE.BoxGeometry(CELL,CELL,CELL);
+  const baseCellMat = new THREE.MeshStandardMaterial({color:0x2b3a67, transparent:true, opacity:0.10});
+  for(let x=0;x<SIZE;x++)for(let y=0;y<SIZE;y++)for(let z=0;z<SIZE;z++){
+    const m=new THREE.Mesh(cellGeo, baseCellMat.clone());
+    m.position.set(x*SPACING-OFFSET,y*SPACING-OFFSET,z*SPACING-OFFSET);
+    m.userData={x,y,z}; cellGroup.add(m); cells.push(m);
+  }
+
+  // ホバー
+  const hoverMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(CELL,CELL,CELL),
+    new THREE.MeshBasicMaterial({color:0x2f86ff, transparent:true, opacity:0.28, depthTest:false})
+  );
+  hoverMesh.renderOrder = 10000; hoverMesh.visible=false; scene.add(hoverMesh);
+
+  // 合法手ハイライト（最前面）
+  const legalHintsGroup = new THREE.Group(); scene.add(legalHintsGroup);
+  const legalHintGeo = new THREE.BoxGeometry(CELL*0.9,CELL*0.9,CELL*0.9);
+  const legalHintMat = new THREE.MeshBasicMaterial({color:0x4CFF80, transparent:true, opacity:0.36, depthTest:false});
+  function clearLegalHints(){ while(legalHintsGroup.children.length){ legalHintsGroup.remove(legalHintsGroup.children.pop()); } }
+  function addHint(x,y,z){ const m=new THREE.Mesh(legalHintGeo,legalHintMat); m.renderOrder=9999; m.position.set(x*SPACING-OFFSET,y*SPACING-OFFSET,z*SPACING-OFFSET); legalHintsGroup.add(m); }
+
+  // 石
+  const blackMat=new THREE.MeshStandardMaterial({color:0x111111,roughness:0.35,metalness:0.1});
+  const whiteMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.25,metalness:0.15});
+  const stoneGeo=new THREE.SphereGeometry(STONE_R,32,32);
+  const stones=Array.from({length:SIZE},()=>Array.from({length:SIZE},()=>Array(SIZE).fill(null)));
+
+  // 状態
+  let turn = PLAYER.BLACK;
+  let locked = false;
+  let vsCPU = false;
+  let cpuTimer = null;
+
+  if(window.__currentLayer===undefined) window.__currentLayer=3;
+
+  function updateTurnUI(){
+    turnText.textContent = (turn===PLAYER.BLACK?'黒 の手番':'白 の手番');
+    turnDot.className = 'dot ' + (turn===PLAYER.BLACK?'black':'white');
+  }
+  function updateCounts(){
+    let b=0,w=0;
+    for(let x=0;x<SIZE;x++)for(let y=0;y<SIZE;y++)for(let z=0;z<SIZE;z++){
+      if(board[x][y][z]===PLAYER.BLACK) b++; else if(board[x][y][z]===PLAYER.WHITE) w++;
     }
-    window.addEventListener('resize', resize);
-    resize();
+    countBlackEl.textContent=b; countWhiteEl.textContent=w;
+  }
 
-    // ライト
-    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-    const dir1 = new THREE.DirectionalLight(0xffffff, 0.8); dir1.position.set(8,10,8); scene.add(dir1);
+  // 方向
+  const ALL_DIRS=[]; for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++) if(dx||dy||dz) ALL_DIRS.push([dx,dy,dz]);
+  const inBounds=(x,y,z)=>x>=0&&x<SIZE&&y>=0&&y<SIZE&&z>=0&&z<SIZE;
 
-    // 盤の中心オフセット
-    const OFFSET = ((SIZE - 1) * SPACING) / 2;
-
-    // 外枠ワイヤー
-    const frameGeo = new THREE.BoxGeometry(SIZE * SPACING + 0.8, SIZE * SPACING + 0.8, SIZE * SPACING + 0.8);
-    const frame = new THREE.LineSegments(new THREE.WireframeGeometry(frameGeo), new THREE.LineBasicMaterial({ color: 0x3a4a7a }));
-    scene.add(frame);
-
-    // 盤データ [x][y][z]
-    const board  = Array.from({length: SIZE}, () => Array.from({length: SIZE}, () => Array(SIZE).fill(0)));
-    const PLAYER = { EMPTY: 0, BLACK: 1, WHITE: 2 };
-
-    // クリック対象セル群
-    const cells = [];
-    const cellGroup = new THREE.Group();
-    scene.add(cellGroup);
-
-    const cellGeo = new THREE.BoxGeometry(CELL, CELL, CELL);
-    const cellMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.08 });
-
-    for (let x=0; x<SIZE; x++) for (let y=0; y<SIZE; y++) for (let z=0; z<SIZE; z++){
-      const m = new THREE.Mesh(cellGeo, cellMat.clone());
-      m.position.set(x*SPACING - OFFSET, y*SPACING - OFFSET, z*SPACING - OFFSET);
-      m.userData = { x, y, z };
-      cellGroup.add(m); cells.push(m);
+  function getFlips(x,y,z,p){
+    if(board[x][y][z]!==PLAYER.EMPTY) return [];
+    const opp=(p===PLAYER.BLACK?PLAYER.WHITE:PLAYER.BLACK);
+    const flips=[];
+    for(const[dx,dy,dz] of ALL_DIRS){
+      let nx=x+dx, ny=y+dy, nz=z+dz; const line=[];
+      if(!inBounds(nx,ny,nz)||board[nx][ny][nz]!==opp) continue;
+      while(inBounds(nx,ny,nz) && board[nx][ny][nz]===opp){ line.push([nx,ny,nz]); nx+=dx; ny+=dy; nz+=dz; }
+      if(inBounds(nx,ny,nz) && board[nx][ny][nz]===p && line.length>0) flips.push(...line);
     }
+    return flips;
+  }
+  const hasAnyMove=(p)=>{ for(let x=0;x<SIZE;x++)for(let y=0;y<SIZE;y++)for(let z=0;z<SIZE;z++) if(board[x][y][z]===PLAYER.EMPTY && getFlips(x,y,z,p).length) return true; return false; };
+  const legalMoves=(p)=>{ const r=[]; for(let x=0;x<SIZE;x++)for(let y=0;y<SIZE;y++)for(let z=0;z<SIZE;z++){ const f=getFlips(x,y,z,p); if(f.length) r.push({x,y,z,flips:f}); } return r; };
 
-    // ホバー表示
-    const hoverMat  = new THREE.MeshBasicMaterial({ color: 0x8ec5ff, transparent: true, opacity: 0.18 });
-    const hoverMesh = new THREE.Mesh(new THREE.BoxGeometry(CELL, CELL, CELL), hoverMat);
-    hoverMesh.visible = false; scene.add(hoverMesh);
+  function placeStone(x,y,z,p){
+    const f=getFlips(x,y,z,p); if(!f.length) return false;
+    board[x][y][z]=p;
+    const mesh=new THREE.Mesh(stoneGeo,(p===PLAYER.BLACK?blackMat:whiteMat).clone());
+    mesh.position.set(x*SPACING-OFFSET,y*SPACING-OFFSET,z*SPACING-OFFSET);
+    mesh.scale.setScalar(0.001); mesh.userData.grow=true; scene.add(mesh); stones[x][y][z]=mesh;
+    for(const[ix,iy,iz] of f){ board[ix][iy][iz]=p; const st=stones[ix][iy][iz]; if(st) st.material=(p===PLAYER.BLACK?blackMat:whiteMat).clone(); }
+    updateCounts(); return true;
+  }
 
-    // 石
-    const blackMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-    const stoneGeo = new THREE.SphereGeometry(STONE_R, 32, 32);
-    const stones   = Array.from({length: SIZE}, () => Array.from({length: SIZE}, () => Array(SIZE).fill(null)));
-
-    // ターン管理
-    let turn   = PLAYER.BLACK;
-    let locked = false;
-
-    function updateTurnUI(){
-      turnText.textContent = (turn === PLAYER.BLACK ? '黒 の手番' : '白 の手番');
-      turnDot.classList.toggle('black', turn === PLAYER.BLACK);
-      turnDot.classList.toggle('white', turn === PLAYER.WHITE);
+  function endGame(){
+    let b=0,w=0;
+    for(let x=0;x<SIZE;x++)for(let y=0;y<SIZE;y++)for(let z=0;z<SIZE;z++){
+      if(board[x][y][z]===PLAYER.BLACK)b++; else if(board[x][y][z]===PLAYER.WHITE)w++;
     }
-    function updateCounts(){
-      let b=0,w=0; for(let x=0;x<SIZE;x++) for(let y=0;y<SIZE;y++) for(let z=0;z<SIZE;z++){
-        if(board[x][y][z]===PLAYER.BLACK) b++; else if(board[x][y][z]===PLAYER.WHITE) w++;
-      }
-      countBlackEl.textContent=b; countWhiteEl.textContent=w;
+    locked=true; winnerTitle.textContent='ゲーム終了';
+    winnerMsg.textContent=(b===w?'引き分けです':(b>w?'黒の勝ちです':'白の勝ちです'))+`（${b}-${w}）`;
+    winnerOverlay.style.display='grid';
+  }
+
+  // 合法手ハイライト
+  function updateLegalHints(){
+    clearLegalHints();
+    const sel=(window.__currentLayer??3);
+    const targets = sliceOnly.checked ? cells.filter(m=>m.userData.y===sel) : cells;
+    const allow = new Set(targets.map(o=>`${o.userData.x},${o.userData.y},${o.userData.z}`));
+    for(let x=0;x<SIZE;x++)for(let y=0;y<SIZE;y++)for(let z=0;z<SIZE;z++){
+      if(sliceOnly.checked && !allow.has(`${x},${y},${z}`)) continue;
+      if(board[x][y][z]!==PLAYER.EMPTY) continue;
+      if(getFlips(x,y,z,turn).length) addHint(x,y,z);
     }
-    updateTurnUI();
+  }
 
-    // 全方向 26
-    const ALL_DIRS=[]; for(let dx=-1;dx<=1;dx++) for(let dy=-1;dy<=1;dy++) for(let dz=-1;dz<=1;dz++) if(dx||dy||dz) ALL_DIRS.push([dx,dy,dz]);
-    function inBounds(x,y,z){ return x>=0 && x<SIZE && y>=0 && y<SIZE && z>=0 && z<SIZE; }
-
-    // 指した時に反転できる相手石リスト
-    function getFlips(x,y,z,player){
-      if(board[x][y][z] !== PLAYER.EMPTY) return [];
-      const opponent = (player===PLAYER.BLACK?PLAYER.WHITE:PLAYER.BLACK);
-      const toFlip = [];
-      for(const [dx,dy,dz] of ALL_DIRS){
-        let nx=x+dx, ny=y+dy, nz=z+dz; const line=[];
-        if(!inBounds(nx,ny,nz) || board[nx][ny][nz]!==opponent) continue; // 隣が相手色から開始
-        while(inBounds(nx,ny,nz) && board[nx][ny][nz]===opponent){ line.push([nx,ny,nz]); nx+=dx; ny+=dy; nz+=dz; }
-        if(inBounds(nx,ny,nz) && board[nx][ny][nz]===player && line.length>0) toFlip.push(...line);
-      }
-      return toFlip;
+  // CPUスケジューラ（常に一旦クリアしてからセット）
+  function scheduleCpuIfNeeded(){
+    if(cpuTimer){ clearTimeout(cpuTimer); cpuTimer=null; }
+    if(vsCPU && turn===PLAYER.WHITE && !locked){
+      cpuTimer = setTimeout(cpuMove, 300);
     }
+  }
 
-    function hasAnyMove(player){
-      for(let x=0;x<SIZE;x++) for(let y=0;y<SIZE;y++) for(let z=0;z<SIZE;z++)
-        if(board[x][y][z]===PLAYER.EMPTY && getFlips(x,y,z,player).length) return true;
-      return false;
+  function afterMove(){
+    const opp=(turn===PLAYER.BLACK?PLAYER.WHITE:PLAYER.BLACK);
+    if(hasAnyMove(opp)){
+      turn=opp;
+      updateTurnUI(); updateLegalHints(); scheduleCpuIfNeeded();
+      return;
     }
+    // 相手が打てない → パス（UIだけ更新）
+    if(!hasAnyMove(turn)){ endGame(); return; }
+    updateTurnUI(); updateLegalHints(); scheduleCpuIfNeeded();
+  }
 
-    function placeStone(x,y,z,player){
-      const flips = getFlips(x,y,z,player); if(flips.length===0) return false;
-      board[x][y][z] = player;
-      const mesh = new THREE.Mesh(stoneGeo, (player===PLAYER.BLACK?blackMat:whiteMat).clone());
-      mesh.position.set(x*SPACING - OFFSET, y*SPACING - OFFSET, z*SPACING - OFFSET);
-      mesh.scale.setScalar(0.001); mesh.userData.grow = true; // ふわっと出す
-      scene.add(mesh); stones[x][y][z] = mesh;
-      for(const [ix,iy,iz] of flips){ board[ix][iy][iz] = player; const st = stones[ix][iy][iz]; if(st) st.material = (player===PLAYER.BLACK?blackMat:whiteMat).clone(); }
-      updateCounts();
-      return true;
+  // CPU
+  function cpuMove(){
+    cpuTimer=null;
+    if(locked) return;
+    const moves=legalMoves(PLAYER.WHITE);
+    if(!moves.length){ afterMove(); return; } // パス
+    let best=null,score=-1e9;
+    for(const m of moves){
+      const s=m.flips.length*10-(Math.abs(m.x-2.5)+Math.abs(m.y-2.5)+Math.abs(m.z-2.5));
+      if(s>score){ score=s; best=m; }
     }
+    if(best){ placeStone(best.x,best.y,best.z,PLAYER.WHITE); afterMove(); }
+  }
 
-    function showWinner(msg){ winnerTitle.textContent='ゲーム終了'; winnerMsg.textContent=msg; winnerOverlay.style.display='grid'; }
+  // 入力
+  const raycaster=new THREE.Raycaster();
+  const pointer=new THREE.Vector2();
+  function setPointer(ev){ const r=renderer.domElement.getBoundingClientRect(); pointer.x=((ev.clientX-r.left)/r.width)*2-1; pointer.y=-((ev.clientY-r.top)/r.height)*2+1; }
+  function activeCellsForLayer(){ const sel=(window.__currentLayer??3); return cells.filter(m=>m.userData.y===sel); }
+  function onPointerMove(ev){ if(locked)return; setPointer(ev); raycaster.setFromCamera(pointer,camera); const targets=sliceOnly.checked?activeCellsForLayer():cells; const hits=raycaster.intersectObjects(targets); if(hits.length){ const o=hits[0].object; const {x,y,z}=o.userData; if(board[x][y][z]===PLAYER.EMPTY){ hoverMesh.visible=true; hoverMesh.position.copy(o.position); } else hoverMesh.visible=false; } else hoverMesh.visible=false; }
+  function onPointerDown(ev){ if(locked)return; if(vsCPU&&turn===PLAYER.WHITE)return; setPointer(ev); raycaster.setFromCamera(pointer,camera); const targets=sliceOnly.checked?activeCellsForLayer():cells; const hits=raycaster.intersectObjects(targets); if(!hits.length)return; const {x,y,z}=hits[0].object.userData; if(!placeStone(x,y,z,turn))return; afterMove(); }
+  renderer.domElement.addEventListener('pointermove', onPointerMove);
+  renderer.domElement.addEventListener('pointerdown', onPointerDown);
 
-    // レイ + 入力
-    const raycaster = new THREE.Raycaster();
-    const pointer   = new THREE.Vector2();
-    function setPointer(ev){ const rect=renderer.domElement.getBoundingClientRect(); pointer.x=((ev.clientX-rect.left)/rect.width)*2-1; pointer.y=-((ev.clientY-rect.top)/rect.height)*2+1; }
-
-    function onPointerMove(ev){
-      if(locked) return;
-      setPointer(ev); raycaster.setFromCamera(pointer, camera);
-      const targets = sliceOnly.checked ? activeCellsForLayer(currentLayer) : cells;
-      const hits = raycaster.intersectObjects(targets);
-      if(hits.length){ const obj=hits[0].object; const {x,y,z}=obj.userData; if(board[x][y][z]===PLAYER.EMPTY){ hoverMesh.visible=true; hoverMesh.position.copy(obj.position); } else hoverMesh.visible=false; }
-      else hoverMesh.visible=false;
-    }
-
-    function onPointerDown(ev){
-      if(locked) return;
-      setPointer(ev); raycaster.setFromCamera(pointer, camera);
-      const targets = sliceOnly.checked ? activeCellsForLayer(currentLayer) : cells;
-      const hits = raycaster.intersectObjects(targets); if(!hits.length) return;
-      const obj = hits[0].object; const {x,y,z} = obj.userData;
-      if(!placeStone(x,y,z,turn)) return; // 置けない
-      const opponent = (turn===PLAYER.BLACK?PLAYER.WHITE:PLAYER.BLACK);
-      if(hasAnyMove(opponent)) turn = opponent;
-      else if(!hasAnyMove(turn)){
-        let b=0,w=0; for(let x=0;x<SIZE;x++) for(let y=0;y<SIZE;y++) for(let z=0;z<SIZE;z++){ if(board[x][y][z]===PLAYER.BLACK) b++; else if(board[x][y][z]===PLAYER.WHITE) w++; }
-        locked=true; showWinner(b===w?`引き分け(${b}-${w})`:(b>w?`黒の勝ち(${b}-${w})`:`白の勝ち(${b}-${w})`));
-      }
-      updateTurnUI();
-    }
-
-    renderer.domElement.addEventListener('pointermove', onPointerMove);
-    renderer.domElement.addEventListener('pointerdown', onPointerDown);
-
-    // =============================
-// Part 3 / 3  ——  層スライス・初期配置・リセット・アニメーション
-// =============================
-
-    // 層スライス（内側の選択をしやすく）
-    let currentLayer = 3; // 0..5 の中央
-    function activeCellsForLayer(y){ return cells.filter(m=>m.userData.y===y); }
-    function applyLayerStyles(){
-      for(const m of cells){ m.material.opacity = (m.userData.y===currentLayer? 0.14 : 0.02); }
-      layerSlider.value = String(currentLayer); layerVal.textContent = String(currentLayer);
-    }
-    layerSlider.addEventListener('input', ()=>{ currentLayer = parseInt(layerSlider.value,10); applyLayerStyles(); });
-    window.addEventListener('keydown', (e)=>{
-      if(e.key==='['){ currentLayer = Math.max(0, currentLayer-1); applyLayerStyles(); }
-      if(e.key===']'){ currentLayer = Math.min(SIZE-1, currentLayer+1); applyLayerStyles(); }
-    });
-
-    // 初期配置（中心 2×2×2 を交互色でセット）
-    function initPosition(){
-      // 盤クリア
-      for(let x=0;x<SIZE;x++) for(let y=0;y<SIZE;y++) for(let z=0;z<SIZE;z++){
-        board[x][y][z] = PLAYER.EMPTY;
-        const st = stones[x][y][z]; if(st){ scene.remove(st); stones[x][y][z]=null; }
-      }
-      // 6×6×6 の中心は (2..3) の二層
-      for(let x=2;x<=3;x++) for(let y=2;y<=3;y++) for(let z=2;z<=3;z++){
-        const player = ((x+y+z)%2===0) ? PLAYER.BLACK : PLAYER.WHITE;
-        board[x][y][z] = player;
-        const mesh = new THREE.Mesh(stoneGeo, (player===PLAYER.BLACK?blackMat:whiteMat).clone());
-        mesh.position.set(x*SPACING - OFFSET, y*SPACING - OFFSET, z*SPACING - OFFSET);
-        scene.add(mesh); stones[x][y][z] = mesh;
-      }
-      locked=false; turn=PLAYER.BLACK; updateTurnUI(); updateCounts(); applyLayerStyles();
-    }
-
-    // リセット & 再戦
-    function resetGame(){ initPosition(); }
-    resetBtn.addEventListener('click', resetGame);
-    againBtn.addEventListener('click', ()=>{ winnerOverlay.style.display='none'; resetGame(); });
-
-    // アニメーション（出現エフェクト）
-    function animate(){
-      requestAnimationFrame(animate);
-      scene.traverse(obj=>{
-        if(obj.userData && obj.userData.grow){ const s=obj.scale.x; const ns=Math.min(1, s+0.18); obj.scale.setScalar(ns); if(ns>=1) obj.userData.grow=false; }
-      });
+  // ホイール：Shift=ズーム / 通常=層
+  renderer.domElement.addEventListener('wheel',(e)=>{
+    if(e.shiftKey){
+      e.preventDefault();
+      const dir=(e.deltaY>0?1:-1);
+      const v=new THREE.Vector3().subVectors(camera.position,controls.target);
+      v.multiplyScalar(dir>0?1.12:0.90);
+      camera.position.copy(new THREE.Vector3().addVectors(controls.target,v));
       controls.update();
-      renderer.render(scene, camera);
+    }else{
+      e.preventDefault();
+      const d=(e.deltaY<0?1:-1);
+      const next=Math.min(SIZE-1, Math.max(0, (window.__currentLayer??3)+d));
+      if(next!==window.__currentLayer) window.__currentLayer=next;
+      if(G.applyLayerStyles) G.applyLayerStyles();
+      updateLegalHints();
+    }
+  },{passive:false});
+
+  // 公開API
+  Object.assign(G,{
+    SIZE,SPACING,CELL,STONE_R,OFFSET,
+    scene,renderer,camera,controls,
+    cells,board,stones,PLAYER,
+    layerSlider,layerVal,sliceOnly,modeSel,resetBtn,againBtn,winnerOverlay,
+    updateCounts,updateTurnUI,
+    getFlips,hasAnyMove,legalMoves,placeStone,endGame,updateLegalHints,
+    // 状態アクセサ
+    get turn(){return turn;}, set turn(v){turn=v;},
+    get vsCPU(){return vsCPU;}, set vsCPU(v){vsCPU=!!v;},
+    setLocked:(b)=>{locked=!!b;},
+    afterMove, cpuMove,
+    cancelCpuTimer:()=>{ if(cpuTimer){ clearTimeout(cpuTimer); cpuTimer=null; } },
+    scheduleCpuIfNeeded,
+    // ★ 完全リセットのためのユーティリティ（盤配置後に呼ぶ）
+    resetAll: ()=>{
+      // タイマー停止・中央層
+      if(cpuTimer){ clearTimeout(cpuTimer); cpuTimer=null; }
+      window.__currentLayer = 3;
+      // 状態
+      locked=false;
+      turn = PLAYER.BLACK;
+      vsCPU = (modeSel.value==='cpu');
+      // UI
+      updateTurnUI(); updateCounts();
+      if(G.applyLayerStyles) G.applyLayerStyles();
+      updateLegalHints();
+      // 先手が白になることを防止（白番の時だけCPU予約）
+      scheduleCpuIfNeeded();
+    }
+  });
+</script>
+<!-- ================= JavaScript Part3 (reset/CPU fix) ================= -->
+<script type="module">
+  import * as THREE from 'three';
+  const G = window.Game3DOthello;
+
+  // 層の見え方
+  function applyLayerStyles(){
+    const sel=(window.__currentLayer??3);
+    for(const m of G.cells){ m.material.opacity = (m.userData.y===sel?0.14:0.02); }
+    G.layerSlider.value = String(sel);
+    G.layerVal.textContent = String(sel);
+  }
+  G.applyLayerStyles = applyLayerStyles;
+
+  // 盤の初期配置（中心2×2×2）
+  function initPosition(){
+    const {SIZE,PLAYER,board,stones,scene,SPACING,OFFSET} = G;
+
+    // 盤クリア
+    for(let x=0;x<SIZE;x++)for(let y=0;y<SIZE;y++)for(let z=0;z<SIZE;z++){
+      board[x][y][z]=PLAYER.EMPTY;
+      const st=stones[x][y][z]; if(st){ scene.remove(st); stones[x][y][z]=null; }
     }
 
-    // 起動
-    initPosition();
-    animate();
-  </script>
-</body>
-</html>
+    // 初期石
+    for(let x=2;x<=3;x++)for(let y=2;y<=3;y++)for(let z=2;z<=3;z++){
+      const p=((x+y+z)%2===0)?PLAYER.BLACK:PLAYER.WHITE;
+      board[x][y][z]=p;
+      const mat=(p===PLAYER.BLACK? new THREE.MeshStandardMaterial({color:0x111111,roughness:0.35,metalness:0.1})
+                                 : new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.25,metalness:0.15}));
+      const mesh=new THREE.Mesh(new THREE.SphereGeometry(G.STONE_R,32,32),mat);
+      mesh.position.set(x*SPACING-OFFSET,y*SPACING-OFFSET,z*SPACING-OFFSET);
+      scene.add(mesh); stones[x][y][z]=mesh;
+    }
 
+    // ★ここが重要：必ず「黒番」から再開し、UI/ハイライト/CPU状態を再同期
+    G.resetAll();
+  }
+
+  function resetGame(){
+    if(G.winnerOverlay) G.winnerOverlay.style.display='none';
+    initPosition();
+  }
+
+  // UI
+  G.layerSlider.addEventListener('input',()=>{
+    window.__currentLayer = parseInt(G.layerSlider.value,10);
+    applyLayerStyles(); G.updateLegalHints();
+  });
+  window.addEventListener('keydown',(e)=>{
+    if(e.key==='['){ window.__currentLayer=Math.max(0,(window.__currentLayer??3)-1); applyLayerStyles(); G.updateLegalHints(); }
+    if(e.key===']'){ window.__currentLayer=Math.min(G.SIZE-1,(window.__currentLayer??3)+1); applyLayerStyles(); G.updateLegalHints(); }
+  });
+  G.sliceOnly.addEventListener('change',()=>{ applyLayerStyles(); G.updateLegalHints(); });
+  G.modeSel.addEventListener('change',()=>{ resetGame(); });   // モード変更→完全リセット
+  G.resetBtn.addEventListener('click', resetGame);
+  G.againBtn.addEventListener('click',()=>{ G.winnerOverlay.style.display='none'; resetGame(); });
+
+  // アニメーション
+  function animate(){
+    requestAnimationFrame(animate);
+    G.scene.traverse(o=>{
+      if(o.userData && o.userData.grow){
+        const s=o.scale.x, ns=Math.min(1,s+0.18);
+        o.scale.setScalar(ns); if(ns>=1) o.userData.grow=false;
+      }
+    });
+    G.controls.update(); G.renderer.render(G.scene,G.camera);
+  }
+
+  if(window.__currentLayer===undefined) window.__currentLayer=3;
+  initPosition();
+  animate();
+</script>
